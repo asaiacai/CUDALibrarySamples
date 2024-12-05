@@ -50,24 +50,26 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <time.h>  
+#include <math.h>
 
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
 #include "cublas_utils.h"
 
-using data_type = double;
+using data_type = float;
 
 int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
 
-    const int m = 2;
-    const int n = 2;
-    const int k = 2;
-    const int lda = 2;
-    const int ldb = 2;
-    const int ldc = 2;
+    const int m = 4096;
+    const int n = 4096;
+    const int k = 4096;
+    const int lda = 4096;
+    const int ldb = 4096;
+    const int ldc = 4096;
     /*
      *   A = | 1.0 | 2.0 |
      *       | 3.0 | 4.0 |
@@ -76,8 +78,8 @@ int main(int argc, char *argv[]) {
      *       | 7.0 | 8.0 |
      */
 
-    const std::vector<data_type> A = {1.0, 2.0, 3.0, 4.0};
-    const std::vector<data_type> B = {5.0, 6.0, 7.0, 8.0};
+    const std::vector<data_type> A(m * k);
+    const std::vector<data_type> B(n * k);
     std::vector<data_type> C(m * n);
     const data_type alpha = 1.0;
     const data_type beta = 0.0;
@@ -87,15 +89,16 @@ int main(int argc, char *argv[]) {
     data_type *d_C = nullptr;
 
     cublasOperation_t transa = CUBLAS_OP_N;
-    cublasOperation_t transb = CUBLAS_OP_N;
+    // cublasOperation_t transb = CUBLAS_OP_N;
+    cublasOperation_t transb = CUBLAS_OP_T;
 
-    printf("A\n");
-    print_matrix(m, k, A.data(), lda);
-    printf("=====\n");
+    // printf("A\n");
+    // print_matrix(m, k, A.data(), lda);
+    // printf("=====\n");
 
-    printf("B\n");
-    print_matrix(k, n, B.data(), ldb);
-    printf("=====\n");
+    // printf("B\n");
+    // print_matrix(k, n, B.data(), ldb);
+    // printf("=====\n");
 
     /* step 1: create cublas handle, bind a stream */
     CUBLAS_CHECK(cublasCreate(&cublasH));
@@ -113,24 +116,39 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMemcpyAsync(d_B, B.data(), sizeof(data_type) * B.size(), cudaMemcpyHostToDevice,
                                stream));
 
+    /* time */
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    const clock_t begin_time = clock();
+
     /* step 3: compute */
-    CUBLAS_CHECK(
-        cublasDgemm(cublasH, transa, transb, m, n, k, &alpha, d_A, lda, d_B, ldb, &beta, d_C, ldc));
+    const int iterations = 1000;
+    for (int i = 0; i < iterations; i++) {
+        CUBLAS_CHECK(
+        cublasSgemm(cublasH, transa, transb, m, n, k, &alpha, d_A, lda, d_B, ldb, &beta, d_C, ldc));
+    }
+
+    // CUBLAS_CHECK(
+    //     cublasSgemm(cublasH, transa, transb, m, n, k, &alpha, d_A, lda, d_B, ldb, &beta, d_C, ldc));
+
+    /* end time */
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    std::cout << float( clock () - begin_time ) /  CLOCKS_PER_SEC / iterations;
+    std::cout << " seconds/iter \n";
+    printf ("FLOP = %f \n", 2.0 * m * n * k * iterations);
+    printf ("FLOPS = %f \n", 2.0 * m * n * k * iterations / (float( clock () - begin_time ) /  CLOCKS_PER_SEC) / pow(10.0, 9.0));
 
     /* step 4: copy data to host */
     CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(), cudaMemcpyDeviceToHost,
                                stream));
-
-    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     /*
      *   C = | 23.0 | 31.0 |
      *       | 34.0 | 46.0 |
      */
 
-    printf("C\n");
-    print_matrix(m, n, C.data(), ldc);
-    printf("=====\n");
+    // printf("C\n");
+    // print_matrix(m, n, C.data(), ldc);
+    // printf("=====\n");
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
