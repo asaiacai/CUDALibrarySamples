@@ -57,7 +57,7 @@
 #include <time.h>  
 #include "cublas_utils.h"
 
-using data_type = __nv_bfloat16;
+using data_type = int8_t;
 
 int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
@@ -88,13 +88,13 @@ int main(int argc, char *argv[]) {
 
     const std::vector<data_type> A(m * k * batch_count);
     const std::vector<data_type> B(n * k * batch_count);
-    std::vector<data_type> C(m * n * batch_count);
-    const data_type alpha = 1.1;
-    const data_type beta = 1.0;
+    std::vector<int32_t> C(m * n * batch_count);
+    const int32_t alpha = 1.1;
+    const int32_t beta = 1.0;
 
     data_type *d_A = nullptr;
     data_type *d_B = nullptr;
-    data_type *d_C = nullptr;
+    int32_t *d_C = nullptr;
 
     cublasOperation_t transa = CUBLAS_OP_N;
     cublasOperation_t transb = CUBLAS_OP_T;
@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
     /* step 2: copy data to device */
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(data_type) * A.size()));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B), sizeof(data_type) * B.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C), sizeof(data_type) * C.size()));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C), sizeof(int32_t) * C.size()));
 
     CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(data_type) * A.size(), cudaMemcpyHostToDevice,
                                stream));
@@ -142,11 +142,16 @@ int main(int argc, char *argv[]) {
     //     CUBLAS_GEMM_DEFAULT_TENSOR_OP));
     const int iterations = 100;
     for (int i = 0; i < iterations; i++) {
-        CUBLAS_CHECK(cublasGemmStridedBatchedEx(
-            cublasH, transa, transb, m, n, k, &alpha, d_A, CUDA_R_16BF, lda,
-            strideA, d_B, CUDA_R_16BF, ldb, strideB, &beta, d_C,
-            CUDA_R_16BF, ldc, strideC, batch_count, CUBLAS_COMPUTE_32F_FAST_16BF,
-            CUBLAS_GEMM_DEFAULT));
+        // CUBLAS_CHECK(cublasGemmStridedBatchedEx(
+        //     cublasH, transa, transb, m, n, k, &alpha, d_A, CUDA_R_16BF, lda,
+        //     strideA, d_B, CUDA_R_16BF, ldb, strideB, &beta, d_C,
+        //     CUDA_R_16BF, ldc, strideC, batch_count, CUBLAS_COMPUTE_32F_FAST_16BF,
+        //     CUBLAS_GEMM_DEFAULT));
+        cublasGemmStridedBatchedEx(
+            cublasH, transa, transb, m, n, k, &alpha, d_A, CUDA_R_8I, lda,
+            strideA, d_B, CUDA_R_8I, ldb, strideB, &beta, d_C,
+            CUDA_R_32I, ldc, strideC, batch_count, CUBLAS_COMPUTE_32I,
+            CUBLAS_GEMM_DEFAULT);
     }
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
